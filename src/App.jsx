@@ -1,0 +1,284 @@
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import Header from './components/Header.jsx';
+import FilterBar from './components/FilterBar.jsx';
+import StationCard from './components/StationCard.jsx';
+import PlayerBar from './components/PlayerBar.jsx';
+import Footer from './components/Footer.jsx';
+import { AlertIcon, RefreshIcon, HeartIcon, RadioIcon } from './components/Icons.jsx';
+import { loadAllStations } from './lib/api.js';
+import { RECITERS_CATEGORY } from './lib/countries.js';
+import { readJSON, writeJSON, KEYS } from './lib/storage.js';
+import { useAudioPlayer } from './hooks/useAudioPlayer.js';
+
+// Für die Suche: Groß/Klein, Akzente und Sonderzeichen ignorieren
+const fold = (s) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/ß/g, 'ss');
+
+const PAGE_SIZE = 60; // schrittweises Rendern hält auch schwache Smartphones flüssig
+
+function SkeletonGrid() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+      {Array.from({ length: 9 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 rounded-2xl bg-night-2/80 p-3 ring-1 ring-white/[0.06]">
+          <div className="h-12 w-12 rounded-xl bg-white/[0.06] animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3.5 w-3/4 rounded bg-white/[0.06] animate-pulse" />
+            <div className="h-3 w-1/3 rounded bg-white/[0.05] animate-pulse" />
+            <div className="h-3 w-1/4 rounded bg-white/[0.04] animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ tab, hasQuery, onReset }) {
+  const fav = tab === 'favorites' && !hasQuery;
+  return (
+    <div className="mx-auto flex max-w-sm flex-col items-center py-16 text-center">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-400 ring-1 ring-white/10">
+        {fav ? <HeartIcon className="h-6 w-6" /> : <RadioIcon className="h-6 w-6" />}
+      </div>
+      <p className="font-medium text-slate-200">{fav ? 'Noch keine Favoriten' : 'Keine Sender gefunden'}</p>
+      <p className="mt-1 text-sm text-slate-400">
+        {fav
+          ? 'Tippe auf das Herz-Symbol eines Senders, um ihn hier zu speichern.'
+          : 'Passe die Suche oder den Länderfilter an.'}
+      </p>
+      {!fav && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-4 rounded-full bg-white/[0.06] px-4 py-2 text-sm font-medium text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-emerald"
+        >
+          Filter zurücksetzen
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [stations, setStations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sourceErrors, setSourceErrors] = useState([]);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  const [tab, setTab] = useState('all');
+  const [country, setCountry] = useState('');
+  const [countrySort, setCountrySort] = useState(() => (readJSON(KEYS.sort, 'count') === 'alpha' ? 'alpha' : 'count'));
+  const [favorites, setFavorites] = useState(() => {
+    const f = readJSON(KEYS.favorites, []);
+    return new Set(Array.isArray(f) ? f : []);
+  });
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  const player = useAudioPlayer();
+
+  // Alle Quellen parallel laden (Promise.allSettled in loadAllStations)
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    loadAllStations()
+      .then(({ stations: list, errors }) => {
+        if (cancelled) return;
+        setStations(list);
+        setSourceErrors(errors);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSourceErrors([{ source: 'Alle Quellen', message: 'Netzwerkfehler' }]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  useEffect(() => writeJSON(KEYS.favorites, [...favorites]), [favorites]);
+  useEffect(() => writeJSON(KEYS.sort, countrySort), [countrySort]);
+
+  const toggleFavorite = useCallback((id) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Länderliste mit Anzahl und ISO-Code (für Flaggen)
+  const countries = useMemo(() => {
+    const map = new Map();
+    for (const s of stations) {
+      const entry = map.get(s.country) || { name: s.country, code: s.countrycode, count: 0 };
+      entry.count += 1;
+      if (!entry.code && s.countrycode) entry.code = s.countrycode;
+      map.set(s.country, entry);
+    }
+    const list = [...map.values()];
+    list.sort((a, b) =>
+      countrySort === 'alpha' ? a.name.localeCompare(b.name, 'de') : b.count - a.count || a.name.localeCompare(b.name, 'de')
+    );
+    return list;
+  }, [stations, countrySort]);
+
+  const realCountryCount = useMemo(
+    () => countries.filter((c) => c.name !== RECITERS_CATEGORY && c.name !== 'Unbekannt').length,
+    [countries]
+  );
+
+  const tabCounts = useMemo(() => {
+    let reciters = 0;
+    let favs = 0;
+    for (const s of stations) {
+      if (s.country === RECITERS_CATEGORY) reciters += 1;
+      if (favorites.has(s.id)) favs += 1;
+    }
+    return { all: stations.length, favorites: favs, reciters, countries: stations.length - reciters };
+  }, [stations, favorites]);
+
+  const filtered = useMemo(() => {
+    const terms = fold(deferredQuery).split(/\s+/).filter(Boolean);
+    return stations.filter((s) => {
+      if (tab === 'favorites' && !favorites.has(s.id)) return false;
+      if (tab === 'reciters' && s.country !== RECITERS_CATEGORY) return false;
+      if (tab === 'countries' && s.country === RECITERS_CATEGORY) return false;
+      if (country && s.country !== country) return false;
+      if (terms.length) {
+        const hay = fold(`${s.name} ${s.country} ${s.tags.join(' ')} ${s.language}`);
+        return terms.every((t) => hay.includes(t));
+      }
+      return true;
+    });
+  }, [stations, tab, country, deferredQuery, favorites]);
+
+  // Bei Filterwechsel wieder oben mit der ersten Seite beginnen
+  useEffect(() => setVisible(PAGE_SIZE), [tab, country, deferredQuery]);
+
+  const handleTab = useCallback((t) => {
+    setTab(t);
+    // Widersprüchliche Kombinationen vermeiden
+    setCountry((c) => {
+      if (t === 'reciters' && c && c !== RECITERS_CATEGORY) return '';
+      if (t === 'countries' && c === RECITERS_CATEGORY) return '';
+      return c;
+    });
+  }, []);
+
+  const handleCountry = useCallback((c) => {
+    setCountry(c);
+    setTab((t) => {
+      if (c === RECITERS_CATEGORY && t === 'countries') return 'all';
+      if (c && c !== RECITERS_CATEGORY && t === 'reciters') return 'all';
+      return t;
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    setQuery('');
+    setCountry('');
+    setTab('all');
+  }, []);
+
+  const { station: current, status, play, toggle } = player;
+  const handlePlay = useCallback(
+    (st) => {
+      if (current && current.id === st.id) toggle();
+      else play(st);
+    },
+    [current, play, toggle]
+  );
+
+  const shown = filtered.slice(0, visible);
+
+  return (
+    <div className={`min-h-screen ${current ? 'pb-40 md:pb-28' : ''}`}>
+      <Header stationCount={stations.length} countryCount={realCountryCount} loading={loading} />
+
+      <FilterBar
+        query={query}
+        onQuery={setQuery}
+        tab={tab}
+        onTab={handleTab}
+        tabCounts={tabCounts}
+        country={country}
+        onCountry={handleCountry}
+        countries={countries}
+        countrySort={countrySort}
+        onCountrySort={setCountrySort}
+      />
+
+      <main className="mx-auto max-w-6xl px-4 py-5">
+        {sourceErrors.length > 0 && !loading && (
+          <div role="status" className="mb-4 flex items-start gap-3 rounded-xl bg-gold/[0.07] px-4 py-3 text-sm text-amber-100/90 ring-1 ring-gold/20">
+            <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+            <div className="flex-1">
+              <p>
+                {stations.length > 0 ? 'Einige Quellen sind gerade nicht erreichbar: ' : 'Die Senderlisten konnten nicht geladen werden: '}
+                <span className="text-amber-100">{sourceErrors.map((e) => e.source).join(', ')}</span>.
+                {stations.length > 0 && ' Alle übrigen Sender funktionieren normal.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-gold hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-gold"
+            >
+              <RefreshIcon className="h-3.5 w-3.5" /> Erneut laden
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <SkeletonGrid />
+        ) : filtered.length === 0 ? (
+          stations.length > 0 && <EmptyState tab={tab} hasQuery={Boolean(query || country)} onReset={resetFilters} />
+        ) : (
+          <>
+            <p className="mb-3 text-xs text-slate-500" aria-live="polite">
+              {filtered.length} Sender
+              {country ? ` · ${country}` : ''}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {shown.map((s) => (
+                <StationCard
+                  key={s.id}
+                  station={s}
+                  isCurrent={current?.id === s.id}
+                  status={current?.id === s.id ? status : 'idle'}
+                  isFavorite={favorites.has(s.id)}
+                  onPlay={handlePlay}
+                  onToggleFavorite={toggleFavorite}
+                />
+              ))}
+            </div>
+            {filtered.length > visible && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setVisible((v) => v + PAGE_SIZE)}
+                  className="rounded-full bg-white/[0.05] px-5 py-2.5 text-sm font-medium text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-emerald"
+                >
+                  Weitere Sender anzeigen ({filtered.length - visible})
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      <Footer />
+      <PlayerBar player={player} />
+    </div>
+  );
+}

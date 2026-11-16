@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night: #0B1120;
+  --color-night-2: #111a2e;
+  --color-night-3: #17223a;
+  --color-emerald: #10B981;
+  --color-gold: #F59E0B;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Amiri", "Noto Naskh Arabic", serif;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  background: var(--color-night);
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Dezentes geometrisches Muster (achtzackige Sterne) */
+.geo-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%2310B981' stroke-opacity='0.06' stroke-width='1'%3E%3Crect x='24' y='24' width='32' height='32'/%3E%3Crect x='24' y='24' width='32' height='32' transform='rotate(45 40 40)'/%3E%3Ccircle cx='40' cy='40' r='6'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; }
+
+@keyframes eq { 0%,100% { transform: scaleY(.3) } 50% { transform: scaleY(1) } }
+.eq-bar { transform-origin: bottom; animation: eq 1s ease-in-out infinite; }
+.eq-bar:nth-child(2) { animation-delay: .2s }
+.eq-bar:nth-child(3) { animation-delay: .4s }
+
+@media (prefers-reduced-motion: reduce) {
+  .eq-bar { animation: none; transform: scaleY(.7); }
+}
+
+.safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+.safe-top { padding-top: env(safe-area-inset-top); }

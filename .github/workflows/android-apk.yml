@@ -1,0 +1,66 @@
+name: Android-APK bauen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: ${{ github.run_number }}0
+      VERSION_NAME: 1.0.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Web-App bauen und in Android übernehmen
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: APK bauen
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/QuranRadio-v${VERSION_NAME}.apk"
+
+      - name: APK als Build-Artefakt speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuranRadio-v${{ env.VERSION_NAME }}
+          path: QuranRadio-v*.apk
+
+      - name: Als GitHub-Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION_NAME }}
+          name: Quran Radio v${{ env.VERSION_NAME }}
+          make_latest: true
+          body: |
+            Test-Version für Android (ab Android 7).
+            **Installation:** APK auf dem Handy herunterladen, öffnen und „Aus dieser Quelle installieren“ erlauben.
+            Neuere Versionen lassen sich direkt über ältere installieren.
+          files: QuranRadio-v*.apk

@@ -1,0 +1,10 @@
+{
+  "appId": "com.quranmuallem.radio",
+  "appName": "Quran Radio",
+  "webDir": "dist",
+  "backgroundColor": "#0B1120",
+  "android": {
+    "backgroundColor": "#0B1120",
+    "allowMixedContent": false
+  }
+}

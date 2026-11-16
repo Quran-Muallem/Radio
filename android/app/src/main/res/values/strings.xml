@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Quran Radio</string>
+    <string name="title_activity_main">Quran Radio</string>
+    <string name="package_name">com.quranmuallem.radio</string>
+    <string name="custom_url_scheme">com.quranmuallem.radio</string>
+</resources>
