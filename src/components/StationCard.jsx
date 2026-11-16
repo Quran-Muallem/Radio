@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { RadioIcon, HeartIcon, Equalizer, Spinner, PlayIcon, PauseIcon } from './Icons.jsx';
-import { flagEmoji, RECITERS_CATEGORY } from '../lib/countries.js';
+import { countryIcon } from '../lib/countries.js';
 
 // Favicon mit Fallback-Icon, falls keines vorhanden ist oder das Bild nicht lädt
 function StationLogo({ src, name }) {
@@ -32,8 +32,7 @@ function StationCard({ station, isCurrent, status, isFavorite, onPlay, onToggleF
   const playing = isCurrent && status === 'playing';
   const loading = isCurrent && status === 'loading';
   const errored = isCurrent && status === 'error';
-  const isReciter = station.country === RECITERS_CATEGORY;
-  const flag = isReciter ? '🎧' : flagEmoji(station.countrycode);
+  const flag = countryIcon(station.country, station.countrycode);
 
   return (
     <article
@@ -71,6 +70,9 @@ function StationCard({ station, isCurrent, status, isFavorite, onPlay, onToggleF
             </h3>
             {playing && <Equalizer className="mt-0.5 shrink-0" />}
           </div>
+          {station.nameAlt && (
+            <p className="truncate text-[13px] text-slate-300/80"><span dir="auto">{station.nameAlt}</span></p>
+          )}
           <p className="mt-0.5 truncate text-[13px] text-slate-400">
             {flag && <span className="mr-1">{flag}</span>}
             {station.country}

@@ -7,7 +7,7 @@ import { playbackErrorMessage, useVolumeState } from './playerShared.js';
  * Audio-Engine für den Browser / die PWA (in der Android-App übernimmt useNativePlayer).
  * Audio-Engine für klassische Streams (MP3/AAC/OGG) und HLS (.m3u8).
  * - Ein einziges <audio>-Element für die ganze App (kein doppelter Ton)
- * - hls.js nur, wenn der Browser HLS nicht nativ kann (Chrome/Firefox); Safari spielt nativ
+ * - HLS über hls.js (MSE); nur ohne MSE (z. B. iPhone-Safari) über die eingebaute Wiedergabe
  * - Saubere Bereinigung (hls.destroy()) bei jedem Senderwechsel und beim Unmount
  *
  * status: 'idle' | 'loading' | 'playing' | 'paused' | 'error'
@@ -132,9 +132,10 @@ export function useWebPlayer() {
     setStatus('loading');
     if (!reconnect) reportClick(st);
 
-    const nativeHls = a.canPlayType('application/vnd.apple.mpegurl') !== '';
-
-    if (st.hls && !nativeHls && Hls.isSupported()) {
+    // hls.js bevorzugen, wo Media Source Extensions vorhanden sind (Chrome, Firefox, Edge, Android,
+    // Safari auf dem Mac). Die eingebaute HLS-Wiedergabe (z. B. iPhone-Safari) nur als Rückfall –
+    // neuere Chrome-Versionen melden zwar eigene HLS-Unterstützung, die ist aber noch unzuverlässig.
+    if (st.hls && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,

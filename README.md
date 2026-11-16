@@ -14,12 +14,19 @@ React 18 · Vite · Tailwind CSS 4 · hls.js · Capacitor 8
 Jede neue Version lässt sich direkt über die alte installieren.
 
 ## Funktionen
-- Lädt Sender live und parallel aus drei offenen Quellen (`Promise.allSettled` – fällt eine aus, laufen die anderen weiter)
-  - Radio-Browser: `tag=quran` (weltweit) und `byname/Zitouna` (gefiltert auf Tunesien)
-  - MP3Quran API v3 → Kategorie „24/7 Rezitatoren“
-- Nur HTTPS-Streams, Duplikate entfernt, Ländernamen einheitlich auf Deutsch
-- MP3/AAC- und HLS-Streams (hls.js, Safari nativ), saubere Bereinigung beim Senderwechsel
-- Suche, Länderfilter mit Flaggen, Schnellfilter, Favoriten und Lautstärke werden gespeichert
+- **Maximale Abdeckung arabischer Sender** – parallel über `Promise.allSettled` (fällt eine Quelle aus, laufen die anderen weiter):
+  - Radio-Browser: Tags `quran` und `islam`, Namenssuche „قرآن“ und „Quran“
+  - Radio-Browser: komplette Länderlisten für SA, EG, TN, MA, DZ, AE, KW, QA, JO, PS,
+    gefiltert auf Quran-/Islam-Sender (Lateinisch + Arabisch, z. B. Zitouna, Makkah, Tafsir, تلاوة, رقية)
+  - MP3Quran API v3 (arabisch + englisch) → Kategorie „24/7 Rezitatoren (MP3Quran)“ mit arabischem Namen und englischem Untertitel
+- Nur HTTPS-Streams, Duplikate über die normalisierte Stream-URL entfernt
+- Alle Länder auf Deutsch mit Flagge; die 22 arabischen Länder werden zuerst gezeigt
+- **Länder-Leiste** (Flagge, Name, Senderanzahl) + gruppiertes Länder-Dropdown
+- **Tabs:** Alle Sender · Arabische Länder · 24/7 Rezitatoren · Weltweit · Meine Favoriten
+- **Suche auf Deutsch, Lateinisch und Arabisch** – mit Schreibvarianten: „Afasy“ findet „Alafasi“ und „العفاسي“,
+  „Makkah“ findet „مكة“, „القران“ findet „القرآن“
+- MP3/AAC- und HLS-Streams (hls.js; ohne MSE die eingebaute Wiedergabe), saubere Bereinigung beim Senderwechsel
+- Favoriten und Lautstärke werden gespeichert
 - Steuerung über Sperrbildschirm und Kopfhörer (Media Session)
 
 ### Android-App: echtes App-Verhalten
@@ -61,8 +68,9 @@ src/
   hooks/useNativePlayer.js Brücke zum nativen Hintergrund-Dienst
   hooks/useWebPlayer.js    <audio> + hls.js + Media Session API
   hooks/useOnlineStatus.js Netzwerkstatus (Capacitor Network / Browser)
-  lib/api.js               Paralleles Laden, HTTPS-Filter, Duplikate, Klick-Statistik
-  lib/countries.js         Deutsche Ländernamen + Flaggen-Emojis
+  lib/api.js               Paralleles Laden aller Quellen, Religions-Filter, HTTPS, Duplikate, Klick-Statistik
+  lib/search.js            Suche mit Arabisch-Normalisierung und Schreibvarianten
+  lib/countries.js         Deutsche Ländernamen, Flaggen, arabische Länder
   lib/storage.js           Abgesicherter localStorage (Favoriten, Lautstärke)
   components/              Header, FilterBar, StationCard, PlayerBar, Footer, Icons
 android/                   Capacitor-Android-Projekt

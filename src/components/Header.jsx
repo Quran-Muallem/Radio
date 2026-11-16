@@ -2,7 +2,7 @@ import { StarMark } from './Icons.jsx';
 
 function Stat({ value, label, loading }) {
   return (
-    <div className="flex flex-col items-center sm:items-start rounded-xl bg-white/[0.03] ring-1 ring-white/5 px-4 py-2.5 min-w-[96px]">
+    <div className="flex flex-col items-center sm:items-start rounded-xl bg-white/[0.03] ring-1 ring-white/5 px-4 py-2.5 min-w-[88px]">
       <span className="text-2xl font-semibold tabular-nums text-white">
         {loading ? <span className="inline-block h-6 w-10 rounded bg-white/10 animate-pulse align-middle" /> : value}
       </span>
@@ -11,7 +11,7 @@ function Stat({ value, label, loading }) {
   );
 }
 
-export default function Header({ stationCount, countryCount, loading }) {
+export default function Header({ stationCount, countryCount, arabCount, loading }) {
   return (
     <header className="safe-top relative overflow-hidden border-b border-white/5">
       <div className="absolute inset-0 geo-pattern opacity-80" aria-hidden="true" />
@@ -37,6 +37,7 @@ export default function Header({ stationCount, countryCount, loading }) {
             <div className="flex justify-center gap-2.5">
               <Stat value={stationCount} label="Live-Sender" loading={loading} />
               <Stat value={countryCount} label="Länder" loading={loading} />
+              <Stat value={arabCount} label="Arabisch" loading={loading} />
             </div>
           </div>
         </div>

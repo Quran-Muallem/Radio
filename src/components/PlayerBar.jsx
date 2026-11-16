@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PlayIcon, PauseIcon, VolumeIcon, Spinner, AlertIcon, CloseIcon, RadioIcon, RefreshIcon } from './Icons.jsx';
-import { flagEmoji, RECITERS_CATEGORY } from '../lib/countries.js';
+import { countryIcon } from '../lib/countries.js';
 
 function LiveBadge({ status }) {
   const live = status === 'playing';
@@ -47,7 +47,7 @@ export default function PlayerBar({ player }) {
   const isPlaying = status === 'playing';
   const isLoading = status === 'loading';
   const isError = status === 'error';
-  const flag = station.country === RECITERS_CATEGORY ? '🎧' : flagEmoji(station.countrycode);
+  const flag = countryIcon(station.country, station.countrycode);
   const effectiveVolume = muted ? 0 : volume;
 
   return (
@@ -76,9 +76,11 @@ export default function PlayerBar({ player }) {
             <div className="flex items-center gap-2">
               <LiveBadge status={status} />
             </div>
-            <p className="mt-1 truncate text-[15px] font-semibold text-white" dir="auto" title={station.name}>{station.name}</p>
+            {/* dir="auto" am Inline-Element: Arabisch wird korrekt gesetzt, bleibt aber linksbündig im Layout */}
+            <p className="mt-1 truncate text-[15px] font-semibold text-white" title={station.name}><span dir="auto">{station.name}</span></p>
             <p className="truncate text-xs text-slate-400">
               {flag && <span className="mr-1">{flag}</span>}
+              {station.nameAlt ? <span dir="auto">{station.nameAlt} · </span> : null}
               {station.country}
             </p>
           </div>

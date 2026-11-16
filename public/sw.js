@@ -5,7 +5,7 @@
  * - Eigene Dateien (JS/CSS/Icons): aus dem Speicher, im Hintergrund aktualisiert.
  * - Fremde Server (APIs, Audio-Streams) werden NICHT angefasst oder gespeichert.
  */
-const CACHE = 'quran-radio-v3';
+const CACHE = 'quran-radio-v4';
 const SHELL = ['./', './index.html', './offline.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 // Beim Installieren das App-Gerüst UND die in index.html verlinkten Build-Dateien (JS/CSS mit Hash) speichern,

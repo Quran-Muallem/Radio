@@ -23,6 +23,6 @@ export const KEYS = {
   volume: 'quranRadio.volume.v1',
   muted: 'quranRadio.muted.v1',
   sort: 'quranRadio.countrySort.v1',
-  stationsCache: 'quranRadio.stationsCache.v1', // letzte erfolgreich geladene Senderliste (für Offline)
+  stationsCache: 'quranRadio.stationsCache.v2', // letzte erfolgreich geladene Senderliste (für Offline)
   lastStation: 'quranRadio.lastStation.v1', // zuletzt gespielter Sender (Wiederherstellung nach App-Neustart)
 };

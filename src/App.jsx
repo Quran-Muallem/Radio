@@ -8,26 +8,20 @@ import Footer from './components/Footer.jsx';
 import OfflineScreen from './components/OfflineScreen.jsx';
 import { AlertIcon, RefreshIcon, HeartIcon, RadioIcon } from './components/Icons.jsx';
 import { loadAllStations } from './lib/api.js';
+import { buildQuery, matchesQuery } from './lib/search.js';
 import { RECITERS_CATEGORY } from './lib/countries.js';
 import { readJSON, writeJSON, KEYS } from './lib/storage.js';
 import { useAudioPlayer } from './hooks/useAudioPlayer.js';
 import { useOnlineStatus } from './hooks/useOnlineStatus.js';
 import { isNative } from './lib/platform.js';
 
-// Für die Suche: Groß/Klein, Akzente und Sonderzeichen ignorieren
-const fold = (s) =>
-  (s || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/ß/g, 'ss');
-
 const PAGE_SIZE = 60;
 
 // Letzte gute Senderliste lesen (für den Offline-Fall)
 function readCache() {
   const c = readJSON(KEYS.stationsCache, null);
-  return c && Array.isArray(c.stations) && c.stations.length ? c : null;
+  // Nur Einträge im aktuellen Datenformat verwenden (mit Region und Suchtext)
+  return c && Array.isArray(c.stations) && c.stations.length && c.stations[0].region && c.stations[0].search ? c : null;
 }
 
 function formatCacheAge(ts) {
@@ -122,8 +116,10 @@ export default function App() {
         } else if (list.length > 0) {
           setStations(list);
           setCachedAt(0);
-          // Nur vollständige Listen speichern, damit der Offline-Stand möglichst komplett ist
-          if (errors.length === 0) writeJSON(KEYS.stationsCache, { t: Date.now(), stations: list });
+          // Vollständige Listen speichern; beim allerersten Start auch eine fast vollständige
+          if (errors.length === 0 || (!readCache() && list.length > 50)) {
+            writeJSON(KEYS.stationsCache, { t: Date.now(), stations: list });
+          }
         } else {
           // Nichts geladen (offline oder alle Quellen down) → gespeicherte Liste anzeigen
           setStations(cache ? cache.stations : []);
@@ -158,48 +154,48 @@ export default function App() {
     });
   }, []);
 
-  // Länderliste mit Anzahl und ISO-Code (für Flaggen)
+  // Länderliste mit Anzahl, ISO-Code (Flagge) und Region.
+  // Reihenfolge: arabische Länder zuerst, danach weltweit – jeweils nach Senderanzahl (oder A–Z).
   const countries = useMemo(() => {
     const map = new Map();
     for (const s of stations) {
-      const entry = map.get(s.country) || { name: s.country, code: s.countrycode, count: 0 };
+      if (s.region === 'reciters') continue; // eigene Kategorie mit eigenem Tab
+      const entry = map.get(s.country) || { name: s.country, code: s.countrycode, region: s.region, count: 0 };
       entry.count += 1;
       if (!entry.code && s.countrycode) entry.code = s.countrycode;
       map.set(s.country, entry);
     }
+    const byOrder = (a, b) =>
+      countrySort === 'alpha' ? a.name.localeCompare(b.name, 'de') : b.count - a.count || a.name.localeCompare(b.name, 'de');
     const list = [...map.values()];
-    list.sort((a, b) =>
-      countrySort === 'alpha' ? a.name.localeCompare(b.name, 'de') : b.count - a.count || a.name.localeCompare(b.name, 'de')
-    );
-    return list;
+    return [...list.filter((c) => c.region === 'arab').sort(byOrder), ...list.filter((c) => c.region !== 'arab').sort(byOrder)];
   }, [stations, countrySort]);
 
-  const realCountryCount = useMemo(
-    () => countries.filter((c) => c.name !== RECITERS_CATEGORY && c.name !== 'Unbekannt').length,
-    [countries]
-  );
+  // Einzelne ausgefallene Länderlisten sind kaum spürbar – Hinweis nur bei größeren Ausfällen
+  const significantErrors =
+    sourceErrors.length >= 3 || sourceErrors.some((e) => e.source.startsWith('MP3Quran') || e.source === 'Alle Quellen');
+
+  const reciterCount = useMemo(() => stations.filter((s) => s.region === 'reciters').length, [stations]);
+
+  const realCountryCount = useMemo(() => countries.filter((c) => c.name !== 'Unbekannt').length, [countries]);
+  const arabCountryCount = useMemo(() => countries.filter((c) => c.region === 'arab').length, [countries]);
 
   const tabCounts = useMemo(() => {
-    let reciters = 0;
-    let favs = 0;
+    const counts = { all: stations.length, arab: 0, reciters: 0, world: 0, favorites: 0 };
     for (const s of stations) {
-      if (s.country === RECITERS_CATEGORY) reciters += 1;
-      if (favorites.has(s.id)) favs += 1;
+      counts[s.region] += 1;
+      if (favorites.has(s.id)) counts.favorites += 1;
     }
-    return { all: stations.length, favorites: favs, reciters, countries: stations.length - reciters };
+    return counts;
   }, [stations, favorites]);
 
   const filtered = useMemo(() => {
-    const terms = fold(deferredQuery).split(/\s+/).filter(Boolean);
+    const q = buildQuery(deferredQuery);
     return stations.filter((s) => {
       if (tab === 'favorites' && !favorites.has(s.id)) return false;
-      if (tab === 'reciters' && s.country !== RECITERS_CATEGORY) return false;
-      if (tab === 'countries' && s.country === RECITERS_CATEGORY) return false;
+      if ((tab === 'arab' || tab === 'reciters' || tab === 'world') && s.region !== tab) return false;
       if (country && s.country !== country) return false;
-      if (terms.length) {
-        const hay = fold(`${s.name} ${s.country} ${s.tags.join(' ')} ${s.language}`);
-        return terms.every((t) => hay.includes(t));
-      }
+      if (q.length && !matchesQuery(s.search || '', q)) return false;
       return true;
     });
   }, [stations, tab, country, deferredQuery, favorites]);
@@ -207,24 +203,28 @@ export default function App() {
   // Bei Filterwechsel wieder oben mit der ersten Seite beginnen
   useEffect(() => setVisible(PAGE_SIZE), [tab, country, deferredQuery]);
 
+  // Region des gewählten Landes (für widerspruchsfreie Tab-/Länder-Kombinationen)
+  const regionOf = useCallback((name) => (name === RECITERS_CATEGORY ? 'reciters' : countries.find((c) => c.name === name)?.region), [countries]);
+
   const handleTab = useCallback((t) => {
     setTab(t);
-    // Widersprüchliche Kombinationen vermeiden
     setCountry((c) => {
-      if (t === 'reciters' && c && c !== RECITERS_CATEGORY) return '';
-      if (t === 'countries' && c === RECITERS_CATEGORY) return '';
+      if (!c) return c;
+      if ((t === 'arab' || t === 'world' || t === 'reciters') && regionOf(c) !== t) return '';
       return c;
     });
-  }, []);
+  }, [regionOf]);
 
   const handleCountry = useCallback((c) => {
     setCountry(c);
-    setTab((t) => {
-      if (c === RECITERS_CATEGORY && t === 'countries') return 'all';
-      if (c && c !== RECITERS_CATEGORY && t === 'reciters') return 'all';
-      return t;
-    });
-  }, []);
+    if (!c) return;
+    if (c === RECITERS_CATEGORY) {
+      setCountry('');
+      setTab('reciters');
+      return;
+    }
+    setTab((t) => ((t === 'arab' || t === 'world' || t === 'reciters') && regionOf(c) !== t ? 'all' : t));
+  }, [regionOf]);
 
   const resetFilters = useCallback(() => {
     setQuery('');
@@ -285,7 +285,7 @@ export default function App() {
     <div className={`min-h-screen ${current ? 'pb-40 md:pb-28' : ''}`}>
       {/* Hintergrund hinter der Statusleiste (Android Edge-to-Edge / iOS-PWA) */}
       <div className="status-scrim" aria-hidden="true" />
-      <Header stationCount={stations.length} countryCount={realCountryCount} loading={loading && stations.length === 0} />
+      <Header stationCount={stations.length} countryCount={realCountryCount} arabCount={arabCountryCount} loading={loading && stations.length === 0} />
 
       <FilterBar
         query={query}
@@ -296,6 +296,7 @@ export default function App() {
         country={country}
         onCountry={handleCountry}
         countries={countries}
+        reciterCount={reciterCount}
         countrySort={countrySort}
         onCountrySort={setCountrySort}
       />
@@ -312,7 +313,7 @@ export default function App() {
           </div>
         )}
 
-        {online && sourceErrors.length > 0 && !loading && stations.length > 0 && (
+        {online && significantErrors && !loading && stations.length > 0 && (
           <div role="status" className="mb-4 flex items-start gap-3 rounded-xl bg-gold/[0.07] px-4 py-3 text-sm text-amber-100/90 ring-1 ring-gold/20">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
             <div className="flex-1">

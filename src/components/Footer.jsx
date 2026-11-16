@@ -6,7 +6,7 @@ export default function Footer() {
         <strong className="font-medium text-slate-400">Rechtlicher Hinweis:</strong> Alle Audiostreams werden direkt von den
         offiziellen Servern der jeweiligen Sender bzw. Anbieter abgespielt. Diese App speichert, verändert oder
         verbreitet keine Audiodaten auf eigenen Servern – sie verlinkt ausschließlich frei und öffentlich zugängliche
-        Live-Streams. Alle Rechte an den Inhalten liegen bei den jeweiligen Sendern.
+        Live-Streams (kein Re-Hosting). Alle Rechte an den Inhalten liegen bei den jeweiligen Sendern.
       </p>
       <p className="mt-3">
         Senderverzeichnisse:{' '}
