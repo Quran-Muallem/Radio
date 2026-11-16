@@ -1,14 +1,18 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import Header from './components/Header.jsx';
 import FilterBar from './components/FilterBar.jsx';
 import StationCard from './components/StationCard.jsx';
 import PlayerBar from './components/PlayerBar.jsx';
 import Footer from './components/Footer.jsx';
+import OfflineScreen from './components/OfflineScreen.jsx';
 import { AlertIcon, RefreshIcon, HeartIcon, RadioIcon } from './components/Icons.jsx';
 import { loadAllStations } from './lib/api.js';
 import { RECITERS_CATEGORY } from './lib/countries.js';
 import { readJSON, writeJSON, KEYS } from './lib/storage.js';
 import { useAudioPlayer } from './hooks/useAudioPlayer.js';
+import { useOnlineStatus } from './hooks/useOnlineStatus.js';
+import { isNative } from './lib/platform.js';
 
 // Für die Suche: Groß/Klein, Akzente und Sonderzeichen ignorieren
 const fold = (s) =>
@@ -18,7 +22,22 @@ const fold = (s) =>
     .replace(/[̀-ͯ]/g, '')
     .replace(/ß/g, 'ss');
 
-const PAGE_SIZE = 60; // schrittweises Rendern hält auch schwache Smartphones flüssig
+const PAGE_SIZE = 60;
+
+// Letzte gute Senderliste lesen (für den Offline-Fall)
+function readCache() {
+  const c = readJSON(KEYS.stationsCache, null);
+  return c && Array.isArray(c.stations) && c.stations.length ? c : null;
+}
+
+function formatCacheAge(ts) {
+  if (!ts) return '';
+  try {
+    return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ts));
+  } catch {
+    return '';
+  }
+} // schrittweises Rendern hält auch schwache Smartphones flüssig
 
 function SkeletonGrid() {
   return (
@@ -68,6 +87,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sourceErrors, setSourceErrors] = useState([]);
   const [reloadKey, setReloadKey] = useState(0);
+  const [cachedAt, setCachedAt] = useState(0); // >0: Liste stammt aus dem Offline-Speicher
+  const online = useOnlineStatus();
 
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
@@ -89,11 +110,32 @@ export default function App() {
     loadAllStations()
       .then(({ stations: list, errors }) => {
         if (cancelled) return;
-        setStations(list);
+        const cache = errors.length > 0 ? readCache() : null;
+        if (list.length > 0 && cache) {
+          // Teilweise geladen (z. B. eine Quelle offline): fehlende Sender aus der gespeicherten Liste ergänzen
+          // Reihenfolge der gespeicherten Liste beibehalten, frische Einträge bevorzugen
+          const fresh = new Map(list.map((s) => [s.id, s]));
+          const known = new Set(cache.stations.map((s) => s.id));
+          const merged = [...cache.stations.map((s) => fresh.get(s.id) || s), ...list.filter((s) => !known.has(s.id))];
+          setStations(merged);
+          setCachedAt(merged.length > list.length ? cache.t : 0);
+        } else if (list.length > 0) {
+          setStations(list);
+          setCachedAt(0);
+          // Nur vollständige Listen speichern, damit der Offline-Stand möglichst komplett ist
+          if (errors.length === 0) writeJSON(KEYS.stationsCache, { t: Date.now(), stations: list });
+        } else {
+          // Nichts geladen (offline oder alle Quellen down) → gespeicherte Liste anzeigen
+          setStations(cache ? cache.stations : []);
+          setCachedAt(cache ? cache.t : 0);
+        }
         setSourceErrors(errors);
       })
       .catch(() => {
         if (cancelled) return;
+        const cache = readCache();
+        setStations(cache ? cache.stations : []);
+        setCachedAt(cache ? cache.t : 0);
         setSourceErrors([{ source: 'Alle Quellen', message: 'Netzwerkfehler' }]);
       })
       .finally(() => {
@@ -191,6 +233,44 @@ export default function App() {
   }, []);
 
   const { station: current, status, play, toggle } = player;
+
+  // Wieder online: fehlende/alte Senderliste neu laden und abgebrochenen Stream fortsetzen
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (!cameBack) return;
+    if (stations.length === 0 || cachedAt > 0 || sourceErrors.length > 0) setReloadKey((k) => k + 1);
+    if (current && status === 'error') play(current, { reconnect: true });
+  }, [online, stations.length, cachedAt, sourceErrors.length, current, status, play]);
+
+  // Android-Zurück-Taste: erst Filter zurücksetzen, dann App in den Hintergrund
+  // (nicht beenden – so läuft das Radio weiter, wie man es von Musik-Apps kennt)
+  const backStateRef = useRef({});
+  backStateRef.current = { query, country, tab };
+  useEffect(() => {
+    if (!isNative) return undefined;
+    let handle = null;
+    let disposed = false;
+    CapApp.addListener('backButton', () => {
+      const st = backStateRef.current;
+      if (st.query || st.country || st.tab !== 'all') {
+        setQuery('');
+        setCountry('');
+        setTab('all');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        CapApp.minimizeApp().catch(() => {});
+      }
+    }).then((h) => {
+      if (disposed) h.remove();
+      else handle = h;
+    });
+    return () => {
+      disposed = true;
+      if (handle) handle.remove();
+    };
+  }, []);
   const handlePlay = useCallback(
     (st) => {
       if (current && current.id === st.id) toggle();
@@ -203,7 +283,9 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${current ? 'pb-40 md:pb-28' : ''}`}>
-      <Header stationCount={stations.length} countryCount={realCountryCount} loading={loading} />
+      {/* Hintergrund hinter der Statusleiste (Android Edge-to-Edge / iOS-PWA) */}
+      <div className="status-scrim" aria-hidden="true" />
+      <Header stationCount={stations.length} countryCount={realCountryCount} loading={loading && stations.length === 0} />
 
       <FilterBar
         query={query}
@@ -219,14 +301,25 @@ export default function App() {
       />
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {sourceErrors.length > 0 && !loading && (
+        {!online && stations.length > 0 && (
+          <div role="status" className="mb-4 flex items-start gap-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-slate-300 ring-1 ring-white/10">
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-gold" aria-hidden="true" />
+            <p>
+              <strong className="font-medium text-white">Offline.</strong> Die Live-Streams brauchen Internet – die App
+              verbindet sich automatisch neu, sobald du wieder online bist.
+              {cachedAt > 0 && ` Angezeigt wird die gespeicherte Senderliste vom ${formatCacheAge(cachedAt)}.`}
+            </p>
+          </div>
+        )}
+
+        {online && sourceErrors.length > 0 && !loading && stations.length > 0 && (
           <div role="status" className="mb-4 flex items-start gap-3 rounded-xl bg-gold/[0.07] px-4 py-3 text-sm text-amber-100/90 ring-1 ring-gold/20">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
             <div className="flex-1">
               <p>
-                {stations.length > 0 ? 'Einige Quellen sind gerade nicht erreichbar: ' : 'Die Senderlisten konnten nicht geladen werden: '}
-                <span className="text-amber-100">{sourceErrors.map((e) => e.source).join(', ')}</span>.
-                {stations.length > 0 && ' Alle übrigen Sender funktionieren normal.'}
+                {cachedAt > 0 ? 'Die Senderverzeichnisse antworten gerade nicht – angezeigt wird die gespeicherte Liste. ' : 'Einige Quellen sind gerade nicht erreichbar: '}
+                {cachedAt === 0 && <span className="text-amber-100">{sourceErrors.map((e) => e.source).join(', ')}.</span>}
+                {cachedAt === 0 && ' Alle übrigen Sender funktionieren normal.'}
               </p>
             </div>
             <button
@@ -239,10 +332,12 @@ export default function App() {
           </div>
         )}
 
-        {loading ? (
+        {loading && stations.length === 0 ? (
           <SkeletonGrid />
+        ) : stations.length === 0 ? (
+          <OfflineScreen online={online} retrying={loading} onRetry={() => setReloadKey((k) => k + 1)} />
         ) : filtered.length === 0 ? (
-          stations.length > 0 && <EmptyState tab={tab} hasQuery={Boolean(query || country)} onReset={resetFilters} />
+          <EmptyState tab={tab} hasQuery={Boolean(query || country)} onReset={resetFilters} />
         ) : (
           <>
             <p className="mb-3 text-xs text-slate-500" aria-live="polite">

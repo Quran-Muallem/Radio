@@ -35,5 +35,23 @@ body {
   .eq-bar { animation: none; transform: scaleY(.7); }
 }
 
-.safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
-.safe-top { padding-top: env(safe-area-inset-top); }
+/* Sichere Ränder: Capacitor 8 setzt --safe-area-inset-* in der Android-App,
+   Browser/PWA liefern env(safe-area-inset-*) */
+:root {
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+.safe-bottom { padding-bottom: max(0.75rem, var(--sab)); }
+.safe-top { padding-top: var(--sat); }
+.sticky-below-status { top: var(--sat); }
+.status-scrim {
+  position: fixed; inset: 0 0 auto 0; height: var(--sat);
+  background: var(--color-night); z-index: 40; pointer-events: none;
+}
+
+/* App-Gefühl: kein Gummiband-Scrollen der ganzen Seite, keine Textauswahl auf Bedienelementen,
+   kein grauer Tipp-Blitz */
+html, body { overscroll-behavior-y: none; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }
+@media (display-mode: standalone) { body { cursor: default; } }

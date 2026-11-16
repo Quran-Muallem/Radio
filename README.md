@@ -22,6 +22,22 @@ Jede neue Version lässt sich direkt über die alte installieren.
 - Suche, Länderfilter mit Flaggen, Schnellfilter, Favoriten und Lautstärke werden gespeichert
 - Steuerung über Sperrbildschirm und Kopfhörer (Media Session)
 
+### Android-App: echtes App-Verhalten
+- **Hintergrund-Wiedergabe:** Native Audio-Engine (Media3/ExoPlayer) in einem Medien-Dienst –
+  läuft weiter bei ausgeschaltetem Bildschirm und im Hintergrund (Wake- und WLAN-Lock)
+- **Sperrbildschirm & Benachrichtigung:** Play/Pause, Senderlogo und -name; Bluetooth- und Kopfhörertasten
+- **Audiofokus:** pausiert bei Anrufen, pausiert beim Abziehen der Kopfhörer
+- **Live statt Puffer:** Nach einer Pause wird der Stream frisch verbunden
+- **Zurück-Taste:** setzt erst Filter zurück, dann geht die App in den Hintergrund (Radio läuft weiter)
+- **Vollbild ohne Adresszeile**, Statusleiste im App-Design (Edge-to-Edge)
+
+### Offline
+- Letzte Senderliste wird gespeichert und offline angezeigt (mit Datum)
+- Eigene Offline-Seite, wenn noch keine Liste vorhanden ist
+- Automatisches Neuladen und Fortsetzen des Streams, sobald das Netz zurück ist
+- Web-Version als **PWA**: installierbar („Zum Startbildschirm“), eigenes Fenster ohne Adresszeile,
+  startet dank Service Worker auch offline
+
 ## Automatische Builds
 Bei jedem Push auf `main`:
 - **Android-APK bauen** (`.github/workflows/android-apk.yml`) → neues Release mit APK
@@ -41,12 +57,18 @@ cd android && ./gradlew assembleDebug   # APK (benötigt Android SDK + JDK 21)
 ```
 src/
   App.jsx                  Zustand, Filterlogik, Layout
-  hooks/useAudioPlayer.js  Audio-Engine (MP3/AAC + HLS, Fehlerbehandlung, Media Session)
+  hooks/useAudioPlayer.js  wählt die Engine: nativ (App) oder Web (Browser)
+  hooks/useNativePlayer.js Brücke zum nativen Hintergrund-Dienst
+  hooks/useWebPlayer.js    <audio> + hls.js + Media Session API
+  hooks/useOnlineStatus.js Netzwerkstatus (Capacitor Network / Browser)
   lib/api.js               Paralleles Laden, HTTPS-Filter, Duplikate, Klick-Statistik
   lib/countries.js         Deutsche Ländernamen + Flaggen-Emojis
   lib/storage.js           Abgesicherter localStorage (Favoriten, Lautstärke)
   components/              Header, FilterBar, StationCard, PlayerBar, Footer, Icons
 android/                   Capacitor-Android-Projekt
+  …/RadioPlaybackService.java  Medien-Dienst (ExoPlayer + MediaSession)
+  …/NativeRadioPlugin.java     JS-Brücke (play/pause/resume/stop/setVolume + Statusereignisse)
+public/                    PWA: manifest.webmanifest, sw.js, offline.html, Icons
 assets/                    Quellgrafiken für App-Icon und Splash-Screen
 ```
 

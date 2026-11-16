@@ -14,7 +14,7 @@ export default function FilterBar({
   country, onCountry, countries, countrySort, onCountrySort,
 }) {
   return (
-    <div className="sticky top-0 z-20 border-b border-white/5 bg-night/85 backdrop-blur-md">
+    <div className="sticky sticky-below-status z-20 border-b border-white/5 bg-night/85 backdrop-blur-md">
       <div className="mx-auto max-w-6xl px-4 py-3 space-y-3">
         <div className="flex flex-col gap-2.5 sm:flex-row">
           {/* Echtzeit-Suche */}
